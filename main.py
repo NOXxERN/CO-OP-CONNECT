@@ -1,3 +1,6 @@
+import joblib
+import pandas as pd
+from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
@@ -202,4 +205,45 @@ def predict_demand(request: PredictionRequest):
         "demand_level": status,
         "action_recommended": recommendation
     }
+# Load ML Model
+try:
+    ml_model = joblib.load("worker_platform_model.joblib")
+    print("✅ ML Model loaded successfully")
+except Exception as e:
+    ml_model = None
+    print(f"⚠️ Could not load ML model: {e}")
+
+# Request Schema
+class TaskTimeRequest(BaseModel):
+    worker_id: int
+    task_type: str
+    hour_of_day: Optional[int] = None
+    day_of_week: Optional[int] = None
+
+# Prediction Endpoint
+@app.post("/api/predict-completion-time")
+def predict_completion_time(request: TaskTimeRequest):
+    if ml_model is None:
+        raise HTTPException(status_code=500, detail="ML Model file not loaded")
+    
+    now = datetime.now()
+    hour = request.hour_of_day if request.hour_of_day is not None else now.hour
+    day = request.day_of_week if request.day_of_week is not None else now.weekday()
+    is_weekend = 1 if day >= 5 else 0
+
+    input_df = pd.DataFrame({
+        "worker_id": [request.worker_id],
+        "task_type": [request.task_type],
+        "hour_of_day": [hour],
+        "day_of_week": [day],
+        "is_weekend": [is_weekend]
+    })
+
+    prediction = ml_model.predict(input_df)[0]
+    return {
+        "worker_id": request.worker_id,
+        "task_type": request.task_type,
+        "estimated_completion_time_minutes": round(float(prediction), 1)
+    }
+
 
