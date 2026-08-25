@@ -188,6 +188,7 @@ def get_admin_stats(db: Session = Depends(get_db)):
     }
 
 # 8. AI DEMAND PREDICTION
+
 @app.post("/api/admin/predict-demand")
 def predict_demand(request: PredictionRequest):
     base_demand = {"plumbing": 45, "electrical": 30, "cleaning": 20}
@@ -220,6 +221,8 @@ class TaskTimeRequest(BaseModel):
     task_type: str
     hour_of_day: Optional[int] = None
     day_of_week: Optional[int] = None
+    is_weekend: Optional[int] = None
+
 
 # Prediction Endpoint
 @app.post("/api/predict-completion-time")
