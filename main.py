@@ -1,3 +1,4 @@
+import database
 import joblib
 import pandas as pd
 from datetime import datetime
@@ -245,5 +246,68 @@ def predict_completion_time(request: TaskTimeRequest):
         "task_type": request.task_type,
         "estimated_completion_time_minutes": round(float(prediction), 1)
     }
+# --- ADMIN & DASHBOARD GET ENDPOINTS ---
+
+@app.get("/api/customers")
+def get_all_customers(db: Session = Depends(database.get_db)):
+    customers = db.query(models.User).filter(models.User.role == "customer").all()
+    return [
+        {
+            "id": u.id,
+            "name": u.name,
+            "email": u.email,
+            "lat": getattr(u, "lat", None),
+            "lon": getattr(u, "lon", None)
+        }
+        for u in customers
+    ]
+
+@app.get("/api/workers")
+def get_all_workers(db: Session = Depends(database.get_db)):
+    workers = db.query(models.User).filter(models.User.role == "worker").all()
+    return [
+        {
+            "id": w.id,
+            "name": w.name,
+            "service": getattr(w, "service", "General"),
+            "rating": getattr(w, "rating", 5.0),
+            "exp_years": getattr(w, "exp_years", 1),
+            "available": getattr(w, "available", True),
+            "lat": getattr(w, "lat", None),
+            "lon": getattr(w, "lon", None)
+        }
+        for w in workers
+    ]
+
+@app.get("/api/bookings")
+def get_all_bookings(db: Session = Depends(database.get_db)):
+    bookings = db.query(models.Booking).all()
+    return [
+        {
+            "id": b.id,
+            "customer_id": b.customer_id,
+            "worker_id": b.worker_id,
+            "service": b.service,
+            "status": b.status
+        }
+        for b in bookings
+    ]
+
+@app.get("/api/admin/stats")
+def get_admin_stats(db: Session = Depends(database.get_db)):
+    total_customers = db.query(models.User).filter(models.User.role == "customer").count()
+    total_workers = db.query(models.User).filter(models.User.role == "worker").count()
+    total_bookings = db.query(models.Booking).count()
+    pending_bookings = db.query(models.Booking).filter(models.Booking.status == "pending").count()
+    completed_bookings = db.query(models.Booking).filter(models.Booking.status == "completed").count()
+
+    return {
+        "total_customers": total_customers,
+        "total_workers": total_workers,
+        "total_bookings": total_bookings,
+        "pending_bookings": pending_bookings,
+        "completed_bookings": completed_bookings
+    }
+
 
 
