@@ -17,7 +17,6 @@ import models
 # Initialize database tables
 models.Base.metadata.create_all(bind=engine)
 
-
 # --- LIFESPAN CONTEXT MANAGER ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,11 +36,10 @@ async def lifespan(app: FastAPI):
         db.close()
     yield
 
-
 # Initialize FastAPI app with lifespan
 app = FastAPI(title="CO-OP CONNECT API", lifespan=lifespan)
 
-# Configure CORS Middleware (Fixes browser blocking & Netlify fetch errors)
+# Configure CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -57,7 +55,6 @@ try:
 except Exception as e:
     ml_model = None
     print(f"⚠️ Could not load ML model: {e}")
-
 
 # --- PYDANTIC SCHEMAS ---
 class UserRegister(BaseModel):
@@ -75,9 +72,13 @@ class MatchRequest(BaseModel):
     customer_lon: float
 
 class BookingRequest(BaseModel):
-    customer_id: int
-    worker_id: int
-    service: str
+    customer_id: Optional[int] = 1
+    worker_id: Optional[int] = 1
+    service: Optional[str] = "Electrical"
+    service_category: Optional[str] = None
+    location: Optional[str] = "North District"
+    urgency: Optional[str] = "Medium"
+    details: Optional[str] = ""
 
 class StatusUpdate(BaseModel):
     status: str
@@ -101,7 +102,6 @@ class TaskTimeRequest(BaseModel):
     day_of_week: Optional[int] = None
     is_weekend: Optional[int] = None
 
-
 # --- HELPER FUNCTIONS ---
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371.0
@@ -112,9 +112,7 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
-
 # --- API ROUTES ---
-
 @app.get("/")
 def read_root():
     return {
@@ -123,8 +121,6 @@ def read_root():
         "docs": "/docs"
     }
 
-# Unified Workers routes
-@app.get("/workers")
 @app.get("/api/workers")
 def list_all_workers(service: Optional[str] = None, db: Session = Depends(get_db)):
     query = db.query(models.Worker)
@@ -163,8 +159,6 @@ def admin_login(credentials: AdminLogin):
         }
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin credentials")
 
-# MATCHING ENGINE
-@app.post("/match-workers")
 @app.post("/api/match")
 def match_workers(request: MatchRequest, db: Session = Depends(get_db)):
     workers = db.query(models.Worker).filter(
@@ -207,10 +201,13 @@ def get_all_bookings(db: Session = Depends(get_db)):
 
 @app.post("/api/bookings")
 def create_booking(booking: BookingRequest, db: Session = Depends(get_db)):
+    # Support both explicit 'service' and form-based 'service_category'
+    service_value = booking.service if booking.service else (booking.service_category or "Electrical")
+    
     new_booking = models.Booking(
-        customer_id=booking.customer_id,
-        worker_id=booking.worker_id,
-        service=booking.service,
+        customer_id=booking.customer_id if booking.customer_id else 1,
+        worker_id=booking.worker_id if booking.worker_id else 1,
+        service=service_value,
         status="pending"
     )
     db.add(new_booking)
@@ -241,9 +238,7 @@ def get_admin_stats(db: Session = Depends(get_db)):
         "completed_jobs": db.query(models.Booking).filter(models.Booking.status == "completed").count()
     }
 
-# AI & ML ENDPOINTS
-@app.post("/predict_demand")
-@app.post("/api/predict-demand")
+@app.post("/api/admin/predict-demand")
 def predict_demand(request: PredictionRequest):
     selected_service = request.service_type or request.service or "Electrical"
     base_demand = {"plumbing": 45, "electrical": 30, "cleaning": 20, "cleaner": 20}
@@ -259,8 +254,7 @@ def predict_demand(request: PredictionRequest):
         "action_recommended": f"Deploy {math.ceil(forecasted_demand * 0.2)} additional workers."
     }
 
-@app.post("/dynamic_price")
-@app.post("/api/dynamic-price")
+@app.post("/api/dynamic_price")
 def calculate_dynamic_price(request: DynamicPriceRequest):
     multiplier = 1.2
     return {
@@ -271,8 +265,7 @@ def calculate_dynamic_price(request: DynamicPriceRequest):
         "currency": "INR"
     }
 
-@app.post("/predict_completion_time")
-@app.post("/api/predict-completion-time")
+@app.post("/api/predict_completion_time")
 def predict_completion_time(request: TaskTimeRequest):
     now = datetime.now()
     hour = request.hour_of_day if request.hour_of_day is not None else now.hour
