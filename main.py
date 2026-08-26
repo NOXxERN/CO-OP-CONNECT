@@ -18,10 +18,9 @@ import models
 models.Base.metadata.create_all(bind=engine)
 
 
-# --- LIFESPAN CONTEXT MANAGER (REPLACES @app.on_event) ---
+# --- LIFESPAN CONTEXT MANAGER ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Seed initial data if table is empty
     db = SessionLocal()
     try:
         if db.query(models.Worker).count() == 0:
@@ -36,18 +35,16 @@ async def lifespan(app: FastAPI):
             print("✅ Initial worker seed completed")
     finally:
         db.close()
-    
     yield
-    # Cleanup / Shutdown logic can go here
 
 
 # Initialize FastAPI app with lifespan
 app = FastAPI(title="CO-OP CONNECT API", lifespan=lifespan)
 
-# Configure CORS Middleware
+# Configure CORS Middleware (Fixes browser blocking & Netlify fetch errors)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this to specific origins in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -88,6 +85,7 @@ class StatusUpdate(BaseModel):
 class PredictionRequest(BaseModel):
     service: Optional[str] = "Electrical"
     service_type: Optional[str] = "Electrical"
+    region: Optional[str] = "north"
     days_ahead: int = 1
 
 class DynamicPriceRequest(BaseModel):
@@ -106,8 +104,7 @@ class TaskTimeRequest(BaseModel):
 
 # --- HELPER FUNCTIONS ---
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Calculates distance between two spatial points using the Haversine formula (km)."""
-    R = 6371.0  # Earth radius in kilometers
+    R = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
     a = (math.sin(dlat / 2) ** 2 +
@@ -126,7 +123,28 @@ def read_root():
         "docs": "/docs"
     }
 
-# 1. USER REGISTRATION
+# Unified Workers routes
+@app.get("/workers")
+@app.get("/api/workers")
+def list_all_workers(service: Optional[str] = None, db: Session = Depends(get_db)):
+    query = db.query(models.Worker)
+    if service:
+        query = query.filter(models.Worker.service.ilike(service))
+    workers = query.all()
+    return [
+        {
+            "worker_id": w.id,
+            "name": w.name,
+            "service": w.service,
+            "rating": w.rating,
+            "exp_years": w.exp_years,
+            "lat": w.lat,
+            "lon": w.lon,
+            "is_available": w.available
+        }
+        for w in workers
+    ]
+
 @app.post("/api/register")
 def register_user(user: UserRegister, db: Session = Depends(get_db)):
     db_user = models.User(name=user.name, email=user.email, role=user.role)
@@ -135,7 +153,6 @@ def register_user(user: UserRegister, db: Session = Depends(get_db)):
     db.refresh(db_user)
     return {"message": "User registered successfully", "user_id": db_user.id}
 
-# 2. ADMIN LOGIN
 @app.post("/api/admin/login")
 def admin_login(credentials: AdminLogin):
     if credentials.email == "admin@coopconnect.com" and credentials.password == "admin123":
@@ -146,16 +163,8 @@ def admin_login(credentials: AdminLogin):
         }
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin credentials")
 
-# 3. GET WORKERS LIST (FILTERABLE BY SERVICE)
-@app.get("/api/workers")
-def get_workers_by_service(service: Optional[str] = None, db: Session = Depends(get_db)):
-    query = db.query(models.Worker)
-    if service:
-        query = query.filter(models.Worker.service.ilike(service))
-    workers = query.all()
-    return {"workers": workers}
-
-# 4. MATCHING ENGINE
+# MATCHING ENGINE
+@app.post("/match-workers")
 @app.post("/api/match")
 def match_workers(request: MatchRequest, db: Session = Depends(get_db)):
     workers = db.query(models.Worker).filter(
@@ -182,7 +191,6 @@ def match_workers(request: MatchRequest, db: Session = Depends(get_db)):
     results.sort(key=lambda x: x["match_score"], reverse=True)
     return {"matches": results}
 
-# 5. BOOKING MANAGEMENT
 @app.get("/api/bookings")
 def get_all_bookings(db: Session = Depends(get_db)):
     bookings = db.query(models.Booking).all()
@@ -219,71 +227,51 @@ def update_booking_status(booking_id: int, update: StatusUpdate, db: Session = D
     db.commit()
     return {"message": "Status updated successfully", "booking_id": booking.id, "status": booking.status}
 
-# 6. CUSTOMER MANAGEMENT
 @app.get("/api/customers")
 def get_customers(db: Session = Depends(get_db)):
-    customers = db.query(models.User).filter(models.User.role == "customer").all()
-    return customers
+    return db.query(models.User).filter(models.User.role == "customer").all()
 
-@app.get("/api/customers/{customer_id}")
-def get_customer_by_id(customer_id: int, db: Session = Depends(get_db)):
-    customer = db.query(models.User).filter(models.User.id == customer_id, models.User.role == "customer").first()
-    if not customer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
-    return customer
-
-# 7. ADMIN DASHBOARD STATS
 @app.get("/api/admin/stats")
 def get_admin_stats(db: Session = Depends(get_db)):
-    total_workers = db.query(models.Worker).count()
-    total_customers = db.query(models.User).filter(models.User.role == "customer").count()
-    total_bookings = db.query(models.Booking).count()
-    active_jobs = db.query(models.Booking).filter(models.Booking.status.in_(["pending", "accepted"])).count()
-    completed_jobs = db.query(models.Booking).filter(models.Booking.status == "completed").count()
-
     return {
-        "total_workers": total_workers,
-        "total_customers": total_customers,
-        "total_bookings": total_bookings,
-        "active_jobs": active_jobs,
-        "completed_jobs": completed_jobs
+        "total_workers": db.query(models.Worker).count(),
+        "total_customers": db.query(models.User).filter(models.User.role == "customer").count(),
+        "total_bookings": db.query(models.Booking).count(),
+        "active_jobs": db.query(models.Booking).filter(models.Booking.status.in_(["pending", "accepted"])).count(),
+        "completed_jobs": db.query(models.Booking).filter(models.Booking.status == "completed").count()
     }
 
-# 8. AI & ML ENDPOINTS
+# AI & ML ENDPOINTS
+@app.post("/predict_demand")
 @app.post("/api/predict-demand")
-@app.post("/api/admin/predict-demand")
 def predict_demand(request: PredictionRequest):
     selected_service = request.service_type or request.service or "Electrical"
     base_demand = {"plumbing": 45, "electrical": 30, "cleaning": 20, "cleaner": 20}
-    service_key = selected_service.lower()
-    
-    current_demand = base_demand.get(service_key, 25)
+    current_demand = base_demand.get(selected_service.lower(), 25)
     forecasted_demand = int(current_demand * (1 + (0.15 * request.days_ahead)))
-    
-    demand_level = "HIGH DEMAND" if forecasted_demand > 35 else "MODERATE DEMAND"
-    recommendation = f"Deploy {math.ceil(forecasted_demand * 0.2)} additional workers."
     
     return {
         "service": selected_service.capitalize(),
+        "region": request.region,
         "forecast_days": request.days_ahead,
         "predicted_requests": forecasted_demand,
-        "demand_level": demand_level,
-        "action_recommended": recommendation
+        "demand_level": "HIGH DEMAND" if forecasted_demand > 35 else "MODERATE DEMAND",
+        "action_recommended": f"Deploy {math.ceil(forecasted_demand * 0.2)} additional workers."
     }
 
+@app.post("/dynamic_price")
 @app.post("/api/dynamic-price")
-@app.post("/api/predict-dynamic-price")
 def calculate_dynamic_price(request: DynamicPriceRequest):
     multiplier = 1.2
-    final_price = round(request.base_price * multiplier, 2)
     return {
         "base_price": request.base_price,
         "service_type": request.service_type,
         "surge_multiplier": multiplier,
-        "recommended_price": final_price,
+        "recommended_price": round(request.base_price * multiplier, 2),
         "currency": "INR"
     }
 
+@app.post("/predict_completion_time")
 @app.post("/api/predict-completion-time")
 def predict_completion_time(request: TaskTimeRequest):
     now = datetime.now()
@@ -291,6 +279,7 @@ def predict_completion_time(request: TaskTimeRequest):
     day = request.day_of_week if request.day_of_week is not None else now.weekday()
     is_weekend = 1 if day >= 5 else 0
 
+    est_minutes = 45.0
     if ml_model is not None:
         try:
             input_df = pd.DataFrame({
@@ -300,30 +289,12 @@ def predict_completion_time(request: TaskTimeRequest):
                 "day_of_week": [day],
                 "is_weekend": [is_weekend]
             })
-            prediction = ml_model.predict(input_df)[0]
-            est_minutes = round(float(prediction), 1)
+            est_minutes = round(float(ml_model.predict(input_df)[0]), 1)
         except Exception:
-            est_minutes = 45.0
-    else:
-        est_minutes = 45.0
+            pass
 
     return {
         "worker_id": request.worker_id,
         "task_type": request.task_type,
         "estimated_completion_time_minutes": est_minutes
     }
-
-# 9. GET ALL WORKERS (UNFILTERED DICT RESPONSE)
-@app.get("/workers")
-def list_all_workers(db: Session = Depends(get_db)):
-    workers = db.query(models.Worker).all()
-    return [
-        {
-            "worker_id": w.id,
-            "name": w.name,
-            "service": w.service,
-            "rating": w.rating,
-            "is_available": w.available  # Mapped correctly from database field
-        }
-        for w in workers
-    ]
