@@ -295,3 +295,7 @@ def predict_completion_time(request: TaskTimeRequest):
         "task_type": request.task_type,
         "estimated_completion_time_minutes": est_minutes
     }
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
