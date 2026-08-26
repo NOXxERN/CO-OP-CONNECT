@@ -33,24 +33,36 @@ export default function Workers() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
           {workers.map((worker) => (
-            <div key={worker.id || Math.random()} style={workerCardStyle}>
+            <div key={worker.worker_id} style={workerCardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', color: '#ffffff', fontWeight: '700' }}>{worker.name || 'Worker'}</h3>
-                  <span style={{ fontSize: '12px', color: '#00f3ff' }}>{worker.skill_category || 'General'}</span>
+                  <h3 style={{ margin: 0, fontSize: '16px', color: '#ffffff', fontWeight: '700' }}>
+                    {worker.name || 'Worker'}
+                  </h3>
+                  <span style={{ fontSize: '12px', color: '#00f3ff' }}>
+                    {worker.service || 'General'}
+                  </span>
                 </div>
-                <span style={statusTagStyle(worker.status)}>
-                  {worker.status || 'AVAILABLE'}
+
+                <span style={statusTagStyle(worker.is_available ? 'AVAILABLE' : 'BUSY')}>
+                  {worker.is_available ? 'AVAILABLE' : 'BUSY'}
                 </span>
               </div>
+
               <div style={detailRowStyle}>
                 <span>Location:</span>
-                <span style={{ color: '#e2e8f0' }}>{worker.location || 'Central Metro'}</span>
+                <span style={{ color: '#e2e8f0' }}>
+                  {worker.lat}, {worker.lon}
+                </span>
               </div>
+
               <div style={detailRowStyle}>
                 <span>Rating:</span>
-                <span style={{ color: '#ffea00', fontWeight: 'bold' }}>★ {worker.rating || '4.9'}</span>
+                <span style={{ color: '#ffea00', fontWeight: 'bold' }}>
+                  ★ {worker.rating || 'N/A'}
+                </span>
               </div>
+
               <button style={actionButtonStyle}>CONNECT WITH WORKER</button>
             </div>
           ))}

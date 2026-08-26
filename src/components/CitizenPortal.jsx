@@ -14,9 +14,18 @@ export default function CitizenPortal() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setStatusMsg('');
+    
     try {
-      await createBooking(formData);
-      setStatusMsg('Request dispatched successfully to available cooperative workers!');
+      // Map frontend form state to backend's expected BookingRequest structure
+      const payload = {
+        customer_id: 1, // Default active customer ID seeded in database
+        worker_id: 1,   // Default assigned worker ID
+        service: formData.service_category
+      };
+
+      const result = await createBooking(payload);
+      setStatusMsg(`Request dispatched successfully! Booking ID: ${result.booking_id} (Status: ${result.status})`);
       setFormData({ service_category: 'Electrical', location: 'North District', urgency: 'Medium', details: '' });
     } catch (err) {
       setStatusMsg('Failed to submit booking request. Please verify backend connection.');
@@ -142,7 +151,14 @@ const labelStyle = {
 
 const fieldStyle = {
   width: '100%',
-  boxSizing: 'border-box'
+  boxSizing: 'border-box',
+  background: '#0b1329',
+  border: '1px solid #1e293b',
+  borderRadius: '10px',
+  padding: '12px',
+  color: '#ffffff',
+  fontSize: '14px',
+  outline: 'none'
 };
 
 const pillBadgeStyle = (color) => ({

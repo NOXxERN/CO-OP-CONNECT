@@ -43,7 +43,7 @@ app = FastAPI(title="CO-OP CONNECT API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -177,8 +177,12 @@ def match_workers(request: MatchRequest, db: Session = Depends(get_db)):
         results.append({
             "worker_id": w.id,
             "name": w.name,
-            "distance_km": round(dist, 2),
+            "service": w.service,
             "rating": w.rating,
+            "is_available": w.available,
+            "lat": w.lat,
+            "lon": w.lon,
+            "distance_km": round(dist, 2),
             "match_score": match_percentage
         })
     

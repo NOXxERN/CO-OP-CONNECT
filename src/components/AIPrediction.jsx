@@ -60,9 +60,11 @@ export default function AIPrediction() {
           {prediction ? (
             <div>
               <div style={{ fontSize: '42px', fontWeight: '900', color: '#00f3ff' }}>
-                {prediction.predicted_demand || prediction.demand_score || '84%'}
+                {prediction.predicted_requests ?? 'N/A'}
               </div>
-              <p style={{ color: '#94a3b8', fontSize: '13px' }}>Estimated Demand Level</p>
+              <p style={{ color: '#94a3b8', fontSize: '13px' }}>
+                {prediction.demand_level || 'Estimated Demand'}
+              </p>
             </div>
           ) : (
             <div style={{ color: '#64748b', fontSize: '13px', textAlign: 'center', padding: '40px 0' }}>
